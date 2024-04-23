@@ -1,0 +1,7 @@
+{
+    "name": "webtourismus/alpinejs-anchor",
+    "description": "Mirror of https://www.npmjs.com/package/@alpinejs/anchor as drupal-library",
+    "license": "MIT",
+    "type": "drupal-library",
+    "homepage": "https://alpinejs.dev/plugins/anchor"
+}
