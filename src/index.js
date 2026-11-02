@@ -13,52 +13,65 @@ export default function (Alpine) {
         }
     })
 
-    Alpine.directive('anchor', Alpine.skipDuringClone((el, { expression, modifiers, value }, { cleanup, evaluate }) => {
-        let { placement, offsetValue, unstyled } = getOptions(modifiers)
+    Alpine.directive('anchor', Alpine.skipDuringClone((el, { expression, modifiers, value }, { evaluate, effect, cleanup }) => {
+        let { placement, offsetValue, unstyled, strategy, allowFlip } = getOptions(modifiers)
 
         el._x_anchor = Alpine.reactive({ x: 0, y: 0 })
 
-        let reference = evaluate(expression)
+        let previousReference = null
+        let release = null
 
-        if (! reference) throw 'Alpine: no element provided to x-anchor...'
+        effect(() => {
+            let reference = evaluate(expression)
+            if (! reference) return
 
-        let compute = () => {
-            let previousValue
+            if (previousReference !== reference) {
+                if (release) release()
 
-            computePosition(reference, el, {
-                placement,
-                middleware: [flip(), shift({padding: 5}), offset(offsetValue)],
-            }).then(({ x, y }) => {
-                unstyled || setStyles(el, x, y)
+                previousReference = reference
 
-                // Only trigger Alpine reactivity when the value actually changes...
-                if (JSON.stringify({ x, y }) !== previousValue) {
-                    el._x_anchor.x = x
-                    el._x_anchor.y = y
+                let compute = () => {
+                    let previousValue
+
+                    computePosition(reference, el, {
+                        placement,
+                        strategy,
+                        middleware: [allowFlip && flip(), shift({padding: 5}), offset(offsetValue)],
+                    }).then(({ x, y }) => {
+                        unstyled || setStyles(el, x, y, strategy)
+
+                        // Only trigger Alpine reactivity when the value actually changes...
+                        if (JSON.stringify({ x, y }) !== previousValue) {
+                            el._x_anchor.x = x
+                            el._x_anchor.y = y
+                        }
+
+                        previousValue = JSON.stringify({ x, y })
+                    })
                 }
 
-                previousValue = JSON.stringify({ x, y })
-            })
-        }
+                release = autoUpdate(reference, el, () => compute())
+            }
+        })
 
-        let release = autoUpdate(reference, el, () => compute())
-
-        cleanup(() => release())
+        cleanup(() => {
+            if (release) release()
+        })
     },
 
     // When cloning (or "morphing"), we will graft the style and position data from the live tree...
     (el, { expression, modifiers, value }, { cleanup, evaluate }) => {
-        let { placement, offsetValue, unstyled } = getOptions(modifiers)
+        let { placement, offsetValue, unstyled, strategy } = getOptions(modifiers)
 
         if (el._x_anchor) {
-            unstyled || setStyles(el, el._x_anchor.x, el._x_anchor.y)
+            unstyled || setStyles(el, el._x_anchor.x, el._x_anchor.y, strategy)
         }
     }))
 }
 
-function setStyles(el, x, y) {
+function setStyles(el, x, y, strategy = 'absolute') {
     Object.assign(el.style, {
-        left: x+'px', top: y+'px', position: 'absolute',
+        left: x+'px', top: y+'px', position: strategy,
     })
 }
 
@@ -72,6 +85,8 @@ function getOptions(modifiers) {
         offsetValue = modifiers[idx + 1] !== undefined ? Number(modifiers[idx + 1]) : offsetValue
     }
     let unstyled = modifiers.includes('no-style')
+    let allowFlip = ! modifiers.includes('noflip')
+    let strategy = modifiers.includes('fixed') ? 'fixed' : 'absolute'
 
-    return { placement, offsetValue, unstyled }
+    return { placement, offsetValue, unstyled, strategy, allowFlip }
 }
